@@ -361,17 +361,8 @@ html.loaded .intro .wrap > :nth-child(2) { animation-delay: .1s; }
           <option>Ongoing monthly work</option>
           <option>Not sure yet</option>
         </select></div>
-      <div class="field full"><label for="f-budget">Budget (optional)</label>
-        <select id="f-budget" name="budget">
-          <option value="">Select a range</option>
-          <option>Under $250</option>
-          <option>$250 to $500</option>
-          <option>$500 to $1,000</option>
-          <option>$1,000 to $2,500</option>
-          <option>$2,500 or more</option>
-        </select></div>
       <div class="field full"><label for="f-brief">The brief</label><textarea id="f-brief" name="brief" maxlength="1500" placeholder="Tell me about your brand, the videos you need, and your deadline." required></textarea></div>
-      <input class="hp" name="_honey" type="text" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <input class="hp" name="botcheck" type="checkbox" tabindex="-1" autocomplete="off" aria-hidden="true">
       <button class="send" id="enquiry-send" type="submit"><span id="enquiry-label">Send message</span><span aria-hidden="true">↗</span></button>
       <p class="note" role="status"><span id="enquiry-status">Goes straight to my inbox.</span><span id="enquiry-fallback" hidden>That didn't send. Please email me at <a href="mailto:cortesroque16@gmail.com">cortesroque16@gmail.com</a>.<button class="copy" id="enquiry-copy" type="button">Copy message</button></span></p>
     </form>
@@ -692,8 +683,10 @@ document.getElementById('copy').addEventListener('click', async e => {
   setTimeout(() => e.target.textContent = 'Copy', 1600);
 });
 
-/* Enquiry form: posts to FormSubmit, which emails the address shown in #email.
+/* Enquiry form: posts to Web3Forms, which emails Thirdy (the inbox tied to the access key) with the visitor as reply-to.
+   The access key is public by design: it can only send to that inbox. Get one at https://web3forms.com.
    If sending fails the visitor keeps what they typed and can copy it or email directly. */
+const WEB3FORMS_KEY = '98cf378f-71ae-46e9-b0eb-4552b84372bb';
 const enquiry = document.getElementById('enquiry');
 const enquiryEl = id => document.getElementById('enquiry-' + id);
 let enquiryText = '';
@@ -704,24 +697,26 @@ enquiry.addEventListener('submit', async e => {
   if (!enquiry.reportValidity()) return;
   const to = document.getElementById('email').textContent;
   const subject = `${f.need.value} enquiry from ${f.name.value}`;
-  enquiryText = [`To: ${to}`, `Subject: ${subject}`, '', f.brief.value, '', `What I need: ${f.need.value}`, `Engagement: ${f.engagement.value}`, ...(f.budget.value ? [`Budget: ${f.budget.value}`] : []), '', f.name.value, f.email.value].join('\n');
+  enquiryText = [`To: ${to}`, `Subject: ${subject}`, '', f.brief.value, '', `What I need: ${f.need.value}`, `Engagement: ${f.engagement.value}`, '', f.name.value, f.email.value].join('\n');
   const send = (busy, label) => { enquiryEl('send').disabled = busy; enquiryEl('label').textContent = label; };
   const say = (text, failed) => { enquiryEl('status').textContent = text; enquiryEl('status').hidden = failed; enquiryEl('fallback').hidden = !failed; };
   send(true, 'Sending…');
   say('Sending your message.', false);
   try {
-    const res = await fetch(`https://formsubmit.co/ajax/${to}`, {
+    if (f.botcheck.checked) throw new Error('Spam trap'); // only bots tick the hidden box
+    if (!WEB3FORMS_KEY) throw new Error('No access key');
+    const res = await fetch('https://api.web3forms.com/submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      signal: AbortSignal.timeout(90000), // FormSubmit has taken over a minute to answer
+      signal: AbortSignal.timeout(20000),
       body: JSON.stringify({
-        Name: f.name.value, Email: f.email.value, 'What you need': f.need.value, Engagement: f.engagement.value,
-        Budget: f.budget.value || 'Not given', Brief: f.brief.value,
-        _subject: subject, _replyto: f.email.value, _template: 'table', _honey: f._honey.value,
+        access_key: WEB3FORMS_KEY, subject, from_name: 'Thirdy Cortes portfolio',
+        name: f.name.value, email: f.email.value, 'What you need': f.need.value, Engagement: f.engagement.value,
+        message: f.brief.value,
       }),
     });
     const data = await res.json();
-    if (!res.ok || String(data.success) !== 'true') throw new Error(data.message || 'Not sent');
+    if (!res.ok || data.success !== true) throw new Error(data.message || 'Not sent');
     say(`Sent. Thanks, ${f.name.value}. I'll reply to ${f.email.value}.`, false);
     enquiry.reset();
   } catch { say('', true); }
